@@ -10183,3 +10183,6 @@ var data = [
     year: "2019",
   },
 ];
+
+var years = data.map(({ year }) => year);
+years = years.filter((y, i) => years.indexOf(y) === i);
