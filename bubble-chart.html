@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+
+    <!-- Load d3.js -->
+    <script src="https://d3js.org/d3.v4.js"></script>
+    <!-- Load color scale -->
+    <script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+    <script
+      src="https://code.jquery.com/jquery-3.6.0.min.js"
+      integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4="
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- A bit of CSS: change stroke color of circle on hover (white -> black) -->
+    <style>
+      .bubbles {
+        stroke-width: 1px;
+        stroke: black;
+        opacity: 0.8;
+      }
+      .bubbles:hover {
+        stroke: black;
+      }
+      #my_dataviz {
+        width: 100vw;
+        height: calc(100vh - 70px);
+      }
+      #filters {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .filter {
+        display: flex;
+        flex-direction: column;
+      }
+      .filter > * {
+        margin: 5px;
+      }
+    </style>
+    <title>Document</title>
+    <script type="text/javascript" src="./data.js"></script>
+    <script type="text/javascript" src="./functions.js"></script>
+    <script>
+      var years = data.map(({ year }) => year);
+      years = years.filter((y, i) => years.indexOf(y) === i);
+    </script>
+  </head>
+  <body>
+    <!-- Create a div where the graph will take place -->
+    <center>
+      <h3>World Happiness Measure</h3>
+      <form id="my-form" onchange="filterData(drawChart)">
+        <select name="year">
+          <script>
+            years.forEach((year) => {
+              document.writeln(`<option>${year}</option>`);
+            });
+          </script>
+        </select>
+        <div id="filters"></div>
+      </form>
+    </center>
+    <div id="my_dataviz"></div>
+
+    <hr />
+
+    <script>
+      var filtersRef = document.getElementById("filters");
+      appendFilters(filtersRef);
+      // set the dimensions and margins of the graph
+      var { height: divHeight, width: divWidth } = document
+        .getElementById("my_dataviz")
+        .getBoundingClientRect();
+      var margin = { top: 40, right: 300, bottom: 60, left: 30 },
+        width = divWidth - margin.left - margin.right - 50,
+        height = divHeight - margin.top - margin.bottom - 50;
+
+      // ---------------------------//
+      //       AXIS  AND SCALE      //
+      // ---------------------------//
+
+      xDomain = data.map(({ economy }) => economy);
+      yDomain = data.map(({ health }) => health);
+      zDomain = data.map(({ happiness }) => happiness);
+
+      var continents = data.map(({ continent }) => continent);
+      continents = continents.filter((c, i) => continents.indexOf(c) === i);
+      continents.sort();
+      function drawChart(data) {
+        d3.select("#my_dataviz").select("svg").remove();
+        // append the svg object to the body of the page
+        var svg = d3
+          .select("#my_dataviz")
+          .append("svg")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+          .attr(
+            "transform",
+            "translate(" + margin.left + "," + margin.top + ")"
+          );
+
+        var x = d3
+          .scaleLinear()
+          .domain([-0.1, d3.max(xDomain)])
+          .range([0, width]);
+        svg
+          .append("g")
+          .attr("transform", "translate(0," + height + ")")
+          .call(d3.axisBottom(x).ticks(3));
+
+        // Add X axis label:
+        svg
+          .append("text")
+          .attr("text-anchor", "end")
+          .attr("x", width)
+          .attr("y", height + 50)
+          .text("Gdp per Capita");
+
+        // Add Y axis
+        var y = d3
+          .scaleLinear()
+          .domain([-0.1, d3.max(yDomain)])
+          .range([height, 0]);
+        svg.append("g").call(d3.axisLeft(y));
+
+        // Add a scale for bubble size
+        var z = d3
+          .scaleSqrt()
+          .domain([2, d3.max(zDomain)])
+          .range([2, 30]);
+
+        // Add a scale for bubble color
+        var myColor = d3
+          .scaleOrdinal()
+          .domain(continents)
+          .range(d3.schemeDark2);
+
+        // ---------------------------//
+        //      TOOLTIP               //
+        // ---------------------------//
+
+        // -1- Create a tooltip div that is hidden by default:
+        var tooltip = d3
+          .select("#my_dataviz")
+          .append("div")
+          .style("opacity", 0)
+          .attr("class", "tooltip")
+          .style("background-color", "black")
+          .style("border-radius", "5px")
+          .style("padding", "10px")
+          .style("color", "white")
+          .style("position", "absolute")
+          .style("pointer-events", "none");
+
+        // -2- Create 3 functions to show / update (when mouse move but stay on same circle) / hide the tooltip
+        var showTooltip = function (d) {
+          tooltip.transition().duration(200);
+          tooltip
+            .style("opacity", 1)
+            .html(
+              `Country: ${d.country}<br/>Year: ${d.year}<br/>${filters
+                .reduce(
+                  (res, f) =>
+                    f.type === "range"
+                      ? [
+                          ...res,
+                          `${f.label}: ${d[f.field].toFixed(f.isInt ? 0 : 2)}`,
+                        ]
+                      : res,
+                  []
+                )
+                .join("<br />")}`
+            )
+            .style("left", d3.mouse(this)[0] + 50 + "px")
+            .style("top", d3.mouse(this)[1] + 100 + "px");
+        };
+        var moveTooltip = function (d) {
+          tooltip
+            .style("left", d3.mouse(this)[0] + 50 + "px")
+            .style("top", d3.mouse(this)[1] + 100 + "px");
+        };
+        var hideTooltip = function (d) {
+          tooltip.transition().duration(200).style("opacity", 0);
+        };
+
+        // ---------------------------//
+        //       HIGHLIGHT GROUP      //
+        // ---------------------------//
+
+        // What to do when one group is hovered
+        var highlight = function (d) {
+          // reduce opacity of all groups
+          d3.selectAll(".bubbles").style("opacity", 0.05);
+          // expect the one that is hovered
+          d3.selectAll(".b" + d.split(" ").join("-")).style("opacity", 1);
+        };
+
+        // And when it is not hovered anymore
+        var noHighlight = function (d) {
+          d3.selectAll(".bubbles").style("opacity", 1);
+        };
+
+        // ---------------------------//
+        //       CIRCLES              //
+        // ---------------------------//
+
+        // Add dots
+        svg
+          .append("g")
+          .selectAll("dot")
+          .data(data)
+          .enter()
+          .append("circle")
+          .attr("class", function (d) {
+            return "bubbles b" + d.continent.split(" ").join("-");
+          })
+          .attr("cx", function (d) {
+            return x(d.economy);
+          })
+          .attr("cy", function (d) {
+            return y(d.health);
+          })
+          .attr("r", function (d) {
+            return z(d.happiness);
+          })
+          .style("fill", function (d) {
+            return myColor(d.continent);
+          })
+          // -3- Trigger the functions for hover
+          .on("mouseover", showTooltip)
+          .on("mousemove", moveTooltip)
+          .on("mouseleave", hideTooltip);
+
+        // ---------------------------//
+        //       LEGEND              //
+        // ---------------------------//
+
+        const legendG = svg
+          .append("g")
+          .attr("transform", `translate(${divWidth - 700},0)`);
+        // Add legend: circles
+        if (data.length) {
+          var valuesToShow = [3, 5, 7];
+          var xCircle = 390;
+          var xLabel = 440;
+
+          legendG
+            .selectAll("legend")
+            .data(valuesToShow)
+            .enter()
+            .append("circle")
+            .attr("cx", xCircle)
+            .attr("cy", function (d) {
+              return height - 100 - z(d);
+            })
+            .attr("r", function (d) {
+              return z(d);
+            })
+            .style("fill", "none")
+            .attr("stroke", "black");
+
+          // Add legend: segments
+          legendG
+            .selectAll("legend")
+            .data(valuesToShow)
+            .enter()
+            .append("line")
+            .attr("x1", function (d) {
+              return xCircle + z(d);
+            })
+            .attr("x2", xLabel)
+            .attr("y1", function (d) {
+              return height - 100 - z(d);
+            })
+            .attr("y2", function (d) {
+              return height - 100 - z(d);
+            })
+            .attr("stroke", "black")
+            .style("stroke-dasharray", "2,2");
+
+          // Add legend: labels
+          legendG
+            .selectAll("legend")
+            .data(valuesToShow)
+            .enter()
+            .append("text")
+            .attr("x", xLabel)
+            .attr("y", function (d) {
+              return height - 100 - z(d);
+            })
+            .text(function (d) {
+              return d;
+            })
+            .style("font-size", 10)
+            .attr("alignment-baseline", "middle");
+
+          // Legend title
+          legendG
+            .append("text")
+            .attr("x", xCircle)
+            .attr("y", height - 100 + 30)
+            .text("Happiness Score")
+            .attr("text-anchor", "middle");
+        }
+
+        // Add one dot in the legend for each name.
+        var size = 20;
+        var allgroups = continents.filter((c) =>
+          data.some((d) => d.continent === c)
+        );
+        legendG
+          .selectAll("myrect")
+          .data(allgroups)
+          .enter()
+          .append("circle")
+          .attr("cx", 390)
+          .attr("cy", function (d, i) {
+            return 10 + i * (size + 5);
+          }) // 100 is where the first dot appears. 25 is the distance between dots
+          .attr("r", 7)
+          .style("fill", function (d) {
+            return myColor(d);
+          })
+          .on("mouseover", highlight)
+          .on("mouseleave", noHighlight);
+
+        // Add labels beside legend dots
+        legendG
+          .selectAll("mylabels")
+          .data(allgroups)
+          .enter()
+          .append("text")
+          .attr("x", 390 + size * 0.8)
+          .attr("y", function (d, i) {
+            return i * (size + 5) + size / 2;
+          }) // 100 is where the first dot appears. 25 is the distance between dots
+          .style("fill", function (d) {
+            return myColor(d);
+          })
+          .text(function (d) {
+            return d;
+          })
+          .attr("text-anchor", "left")
+          .style("alignment-baseline", "middle")
+          .on("mouseover", highlight)
+          .on("mouseleave", noHighlight);
+      }
+      drawChartByYear("2015", data, drawChart);
+    </script>
+  </body>
+</html>
